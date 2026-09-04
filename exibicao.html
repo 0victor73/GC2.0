@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>GC Master Renderer</title>
+  <style>
+    /* Estilo base super limpo. O OBS precisa de fundo transparente */
+    body {
+      margin: 0;
+      padding: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: transparent;
+    }
+    #master-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+  </style>
+  <style id="gc-style"></style>
+</head>
+<body>
+  
+  <div id="master-container"></div>
+  
+  <script>
+    (function() {
+      'use strict';
+
+      const channel = new BroadcastChannel('gc-control');
+      const masterContainer = document.getElementById('master-container');
+      const gcStyle = document.getElementById('gc-style');
+      let gcScript = null;
+      let gcLoaded = false;
+
+      channel.addEventListener('message', function(event) {
+        const msg = event.data;
+        if (msg.action === 'load_gc') {
+          loadGc(msg.data);
+        }
+        // show/hide/update/toggle são tratados pelo script do GC injetado
+        // que cria seu próprio listener no BroadcastChannel
+      });
+
+      function loadGc(gcData) {
+        console.log('[GC Renderer] Recebendo novo pacote GC...');
+
+        // 1. Limpa o GC atual
+        masterContainer.innerHTML = '';
+        gcStyle.textContent = '';
+        if (gcScript) {
+          try { document.body.removeChild(gcScript); } catch(e) {}
+          gcScript = null;
+        }
+
+        // 2. Extrai o conteúdo do body do HTML
+        let htmlContent = gcData.html;
+        const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        if (bodyMatch) {
+          htmlContent = bodyMatch[1].replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+        }
+
+        // 3. Extrai @import de fontes do CSS e adiciona via <link>
+        const cssContent = gcData.css;
+        const importMatch = cssContent.match(/@import\s+url\(['"]?([^'"\)]+)['"]?\)/g);
+        if (importMatch) {
+          importMatch.forEach(imp => {
+            const urlMatch = imp.match(/url\(['"]?([^'"\)]+)['"]?\)/);
+            if (urlMatch) {
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = urlMatch[1];
+              document.head.appendChild(link);
+            }
+          });
+        }
+
+        // 4. Injeta o CSS (removendo @import para não duplicar)
+        gcStyle.textContent = cssContent.replace(/@import\s+url\([^)]+\);?/g, '');
+
+        // 5. Injeta o HTML
+        masterContainer.innerHTML = htmlContent;
+
+        // 6. Injeta e roda o JS (o script do GC cria seu próprio BroadcastChannel listener)
+        gcScript = document.createElement('script');
+        gcScript.textContent = gcData.js;
+        document.body.appendChild(gcScript);
+
+        gcLoaded = true;
+        console.log('[GC Renderer] GC carregado com sucesso e pronto para comandos.');
+      }
+
+      console.log('[GC Renderer] Aguardando carregamento de GC...');
+    })();
+  </script>
+</body>
+</html>

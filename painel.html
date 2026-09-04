@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Painel de Controle GC 2.0</title>
+  <link rel="stylesheet" href="painel.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- CABEÇALHO -->
+  <div class="cabecalho">
+    <div class="painel-tema">
+      <label for="gc-select">GC Ativo:</label>
+      <select id="gc-select">
+        <option value="" selected disabled>Nenhum GC importado</option>
+        <!-- GCs importados aparecerão aqui via JS -->
+      </select>
+    </div>
+    <div class="botao-config"> 
+      <button id="btn-open-config" title="Configurações">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- BANCO DE DADOS -->
+  <div class="painel">
+    <div class="painel-body">
+      <div class="input-icon">
+        <i data-lucide="search" class="icon-search w-4 h-4"></i>
+        <input type="text" id="busca-db" placeholder="Pesquisar nome ou descrição...">
+      </div>
+      
+      <div id="db-container-oculto" class="hidden">
+        <div class="db-add-row">
+          <input type="text" id="novo-nome-db" placeholder="Nome">
+          <div class="flex-row">
+            <input type="text" id="novo-info-db" placeholder="Descrição">
+            <button id="btn-salvar-db" class="botao-add" title="Adicionar">+</button>
+          </div>
+        </div>
+      
+        <div id="lista-db" class="lista-resultados custom-scrollbar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSMISSÃO -->
+  <div class="painel">
+    <div class="painel-header">
+      <h2 class="painel-titulo flex-center gap-2">
+        <i data-lucide="radio" class="w-4 h-4 text-emerald-400"></i>
+        Transmissão
+      </h2>
+      <label class="switch">
+        <input type="checkbox" id="painel-switchlowerthird">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="painel-body">
+      <input type="text" id="input-nome" placeholder="Nome">
+      <input type="text" id="input-descricao" placeholder="Descrição">
+    </div>
+    <div class="painel-botoes">
+      <button class="botao-salvo" data-slot="1">1</button>
+      <button class="botao-salvo" data-slot="2">2</button>
+      <button class="botao-salvo" data-slot="3">3</button>
+      <button class="botao-salvo" data-slot="4">4</button>
+      <button class="botao-salvo" data-slot="5">5</button>
+      <button class="botao-salvo" data-slot="6">6</button>
+      <button class="botao-salvo" data-slot="7">7</button>
+      <button class="botao-salvo" data-slot="8">8</button>
+    </div>
+  </div>
+
+  <!-- NOTAS -->
+  <div class="painel">
+    <div class="painel-header">
+      <label for="notes" class="painel-titulo">Notas</label>
+    </div>
+    <textarea id="notes" rows="5" class="custom-scrollbar" placeholder="Roteiro ou anotações..."></textarea>
+  </div>
+
+
+  <!-- MODAL DE CONFIGURAÇÕES -->
+  <div id="modal-config" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Configurações do GC</h2>
+        <button id="btn-close-config" class="btn-close"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      
+      <div class="modal-body custom-scrollbar">
+        <!-- Tempo de Duração -->
+        <div class="config-section">
+          <h3>Tempo em Tela</h3>
+          <p class="config-desc">Defina quanto tempo (em milissegundos) o GC deve ficar na tela antes de sair automaticamente. Deixe 0 para controle manual.</p>
+          <div class="flex-row mt-2">
+            <input type="number" id="config-duration" value="5000" min="0" step="500" class="input-config text-center">
+            <span class="text-xs text-slate-400">ms</span>
+          </div>
+        </div>
+
+        <!-- Gerenciamento de GCs -->
+        <div class="config-section mt-4">
+          <h3>Gerenciar Pacotes .gc</h3>
+          <p class="config-desc mb-2">Importe, reordene ou apague seus GCs locais.</p>
+          
+          <button id="btn-import-gc" class="btn-primary w-full mb-3">
+            <i data-lucide="upload-cloud" class="w-4 h-4"></i> Importar .gc
+          </button>
+          
+          <div id="lista-gcs-gerenciar" class="gc-list">
+            <!-- Items inseridos via JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-import-gc" accept=".gc,.zip" class="hidden" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="painel.js"></script>
+</body>
+</html>

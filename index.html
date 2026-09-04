@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GC Creator — Criador de Lower Thirds</title>
+  <meta name="description" content="Criador visual de GCs (Lower Thirds) para OBS Studio. Componha, estilize e exporte pacotes .gc prontos para uso." />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            surface: {
+              50:'#f8f9fc',100:'#eef0f6',200:'#d8dce8',300:'#b4bad0',
+              400:'#8a92b2',500:'#6b7499',600:'#565e82',700:'#464d6b',
+              800:'#2d3250',900:'#1e2140',950:'#13152b',
+            },
+            accent: { 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5' },
+            emerald: { 400:'#34d399', 500:'#10b981' },
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700;800&family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-surface-950 text-gray-200 font-sans h-screen overflow-hidden select-none">
+
+  <!-- ═══════════════ TOP BAR ═══════════════ -->
+  <header id="topbar" class="h-14 bg-surface-900/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-5 z-50 relative">
+    <!-- Logo -->
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-accent-600 flex items-center justify-center shadow-lg shadow-accent-500/20">
+        <i data-lucide="layers" class="w-4 h-4 text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold tracking-tight text-white">GC Creator</h1>
+        <p class="text-[10px] text-surface-400 -mt-0.5">Lower Third Compiler</p>
+      </div>
+    </div>
+
+    <!-- Center: Add Element Buttons -->
+    <div class="flex items-center gap-1.5">
+      <button id="btn-add-text" class="btn-add group" title="Adicionar Texto">
+        <i data-lucide="type" class="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform"></i>
+        <span>Texto</span>
+      </button>
+      <button id="btn-add-image" class="btn-add group" title="Adicionar Imagem">
+        <i data-lucide="image" class="w-4 h-4 text-sky-400 group-hover:scale-110 transition-transform"></i>
+        <span>Imagem</span>
+      </button>
+      <button id="btn-add-shape" class="btn-add group" title="Adicionar Forma">
+        <i data-lucide="square" class="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform"></i>
+        <span>Forma</span>
+      </button>
+    </div>
+
+    <!-- Right Actions -->
+    <div class="flex items-center gap-2">
+      <button id="btn-test-animation" class="btn-topbar group" title="Testar Animação">
+        <i data-lucide="play" class="w-4 h-4 group-hover:text-emerald-400 transition-colors"></i>
+        <span class="hidden sm:inline">Testar</span>
+      </button>
+      <button id="btn-reset" class="btn-topbar group" title="Resetar Tudo">
+        <i data-lucide="rotate-ccw" class="w-4 h-4 group-hover:text-orange-400 transition-colors"></i>
+        <span class="hidden sm:inline">Resetar</span>
+      </button>
+      <div class="w-px h-6 bg-white/10 mx-1"></div>
+      <button id="btn-export" class="btn-export group" title="Gerar Arquivo .gc">
+        <i data-lucide="package" class="w-4 h-4"></i>
+        <span>Gerar .gc</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════ MAIN SPLIT LAYOUT ═══════════════ -->
+  <main id="main-layout" class="flex h-[calc(100vh-3.5rem)]">
+
+    <!-- ─── LEFT: CANVAS / PREVIEW ─── -->
+    <section id="canvas-area" class="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <!-- Canvas info -->
+      <div class="absolute top-4 left-6 flex items-center gap-2 text-[11px] text-surface-500">
+        <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+        <span>Preview 1920×1080</span>
+        <span class="text-surface-700">|</span>
+        <span id="gc-position-label">Nenhum elemento selecionado</span>
+      </div>
+
+      <!-- 16:9 Canvas -->
+      <div id="canvas-wrapper" class="canvas-wrapper">
+        <div id="canvas" class="canvas-surface">
+          <!-- Elements rendered dynamically by app.js -->
+          <!-- Empty state -->
+          <div id="canvas-empty" class="canvas-empty-state">
+            <i data-lucide="plus-circle" class="w-10 h-10 text-surface-700"></i>
+            <p>Adicione elementos usando os botões acima</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas bottom bar -->
+      <div class="absolute bottom-4 left-6 right-6 flex items-center justify-between text-[11px] text-surface-600">
+        <span>Clique no canvas para desselecionar · Delete para remover</span>
+        <div class="flex items-center gap-3">
+          <button id="btn-snap-bottom-left" class="canvas-snap-btn" title="Inferior esquerdo"><i data-lucide="arrow-down-left" class="w-3 h-3"></i></button>
+          <button id="btn-snap-bottom-center" class="canvas-snap-btn" title="Inferior centro"><i data-lucide="arrow-down" class="w-3 h-3"></i></button>
+          <button id="btn-snap-bottom-right" class="canvas-snap-btn" title="Inferior direito"><i data-lucide="arrow-down-right" class="w-3 h-3"></i></button>
+          <span class="text-surface-700">|</span>
+          <button id="btn-snap-center" class="canvas-snap-btn" title="Centro"><i data-lucide="crosshair" class="w-3 h-3"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── RIGHT: TOOL PANEL ─── -->
+    <aside id="tool-panel" class="w-[380px] min-w-[340px] bg-surface-900/60 backdrop-blur-xl border-l border-white/5 flex flex-col h-full">
+
+      <!-- ── LAYERS SECTION ── -->
+      <div class="flex flex-col flex-shrink-0" style="max-height: 260px;">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+          <div class="flex items-center gap-2 text-[11px] font-semibold text-surface-300 uppercase tracking-wider">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-accent-400"></i>
+            Camadas
+          </div>
+          <div class="flex items-center gap-1">
+            <button id="btn-layer-up" class="layer-action-btn" title="Mover para cima">
+              <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+            </button>
+            <button id="btn-layer-down" class="layer-action-btn" title="Mover para baixo">
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+        <div id="layers-list" class="overflow-y-auto custom-scrollbar flex-1">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="border-b border-white/5"></div>
+
+      <!-- ── PROPERTIES SECTION ── -->
+      <div class="flex flex-col flex-1 min-h-0">
+        <div class="flex items-center px-4 py-3 border-b border-white/5">
+          <div class="flex items-center gap-2 text-[11px] font-semibold text-surface-300 uppercase tracking-wider">
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>Propriedades</span>
+            <span id="props-type-badge" class="props-type-badge hidden"></span>
+          </div>
+        </div>
+        <div id="properties-content" class="overflow-y-auto custom-scrollbar flex-1 p-4">
+          <div class="empty-props">
+            <i data-lucide="mouse-pointer-click" class="w-8 h-8 text-surface-700"></i>
+            <p class="text-surface-500 text-xs mt-2">Selecione um elemento</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── GLOBAL SETTINGS ── -->
+      <div class="accordion-section flex-shrink-0 border-t border-white/5" data-section="global">
+        <button class="accordion-trigger" data-target="global">
+          <div class="flex items-center gap-2">
+            <i data-lucide="settings" class="w-4 h-4 text-amber-400"></i>
+            <span>Configurações Globais</span>
+          </div>
+          <i data-lucide="chevron-down" class="w-4 h-4 accordion-chevron"></i>
+        </button>
+        <div class="accordion-content" id="panel-global">
+          <div class="space-y-3">
+            <div class="field-group">
+              <label class="field-label">Tempo em Tela (ms)</label>
+              <div class="flex items-center gap-2">
+                <input type="number" id="global-duration" class="field-input text-center flex-1" value="5000" min="0" step="500" />
+              </div>
+              <p class="text-[9px] text-surface-500 mt-1 leading-tight">Tempo que o GC fica visível. Pode ser sobrescrito pelo painel do OBS usando a variável <code class="text-accent-400">duration</code>. Use 0 para saída manual.</p>
+            </div>
+            <button id="btn-test-anim-panel" class="w-full mt-2 py-2.5 rounded-lg bg-surface-800/80 border border-white/5 text-sm text-surface-300 hover:text-emerald-400 hover:border-emerald-500/30 transition-all flex items-center justify-center gap-2">
+              <i data-lucide="play-circle" class="w-4 h-4"></i>
+              Testar Animações
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Hidden file input for image upload -->
+  <input type="file" id="file-upload" accept="image/*" class="hidden" />
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden">
+    <i data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>
+    <span id="toast-message"></span>
+  </div>
+
+  <!-- JSZip for Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <script src="compiler.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
