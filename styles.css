@@ -25,7 +25,13 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
     0 0 0 1px rgba(255,255,255,0.06),
     0 25px 60px -12px rgba(0,0,0,0.5),
     0 0 80px -20px rgba(99,102,241,0.15);
+  transform-origin: center center;
+  transition: transform 0.15s ease;
 }
+
+#canvas-area.is-panning-ready .canvas-surface { cursor: grab; }
+#canvas-area.is-panning .canvas-wrapper { transition: none; }
+#canvas-area.is-panning .canvas-surface { cursor: grabbing; }
 
 .canvas-surface {
   position: relative;
@@ -327,13 +333,14 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
 }
 .layer-item.selected .layer-type-icon { color: #818cf8; }
 
-.layer-vis-btn, .layer-lock-btn, .layer-del-btn {
+.layer-vis-btn, .layer-rename-btn, .layer-lock-btn, .layer-del-btn {
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 4px;
   background: transparent; border: none; color: #565e82;
   cursor: pointer; transition: all 0.15s ease; flex-shrink: 0;
 }
 .layer-vis-btn:hover { color: #818cf8; }
+.layer-rename-btn:hover { color: #34d399; }
 .layer-lock-btn:hover { color: #f59e0b; }
 .layer-del-btn:hover { color: #ef4444; }
 

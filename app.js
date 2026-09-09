@@ -18,6 +18,9 @@
     selectedId: null,
     nextId: 1,
     globalDuration: 5000,
+    canvasZoom: 1,
+    canvasPanX: 0,
+    canvasPanY: 0,
   };
 
   // ── Reference dimensions (OBS output) ──
@@ -25,6 +28,10 @@
   const REF_H = 1080;
 
   function canvasScale() {
+    return canvasRenderScale() * state.canvasZoom;
+  }
+
+  function canvasRenderScale() {
     return $('canvas').offsetWidth / REF_W;
   }
 
@@ -111,6 +118,8 @@
           fillColor: '#6366f1', fillOpacity: 1,
           strokeColor: '#ffffff', strokeWidth: 0,
           borderRadius: 8,
+          triangleStyle: 'isosceles',
+          starPoints: 5,
         };
     }
   }
@@ -121,7 +130,7 @@
   function renderCanvas() {
     const canvas = $('canvas');
     const emptyState = $('canvas-empty');
-    const s = canvasScale();
+    const s = canvasRenderScale();
 
     // Remove old canvas elements (keep empty state)
     canvas.querySelectorAll('.canvas-element').forEach(el => el.remove());
@@ -237,39 +246,82 @@
 
   function _renderShapeElement(div, el, s) {
     div.classList.add('canvas-el-shape');
+    if (['triangle', 'star', 'diamond', 'hexagon'].includes(el.shapeType)) {
+      const svg = _createPolygonSvg(el, s);
+      div.appendChild(svg);
+      return;
+    }
+
     const shape = document.createElement('div');
     shape.className = 'el-shape-content';
-
-    const r = parseInt(el.fillColor.slice(1,3),16);
-    const g = parseInt(el.fillColor.slice(3,5),16);
-    const b = parseInt(el.fillColor.slice(5,7),16);
+    const r = parseInt(el.fillColor.slice(1,3),16), g = parseInt(el.fillColor.slice(3,5),16), b = parseInt(el.fillColor.slice(5,7),16);
     shape.style.background = `rgba(${r},${g},${b},${el.fillOpacity})`;
-
-    if (el.strokeWidth > 0) {
-      shape.style.border = `${el.strokeWidth * s}px solid ${el.strokeColor}`;
-    }
-
-    switch (el.shapeType) {
-      case 'rect':
-        shape.style.borderRadius = (el.borderRadius * s) + 'px';
-        break;
-      case 'circle':
-        shape.style.borderRadius = '50%';
-        break;
-      case 'triangle':
-        shape.style.background = 'transparent';
-        shape.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
-        shape.style.backgroundColor = `rgba(${r},${g},${b},${el.fillOpacity})`;
-        break;
-    }
-
+    if (el.strokeWidth > 0) shape.style.border = `${el.strokeWidth * s}px solid ${el.strokeColor}`;
+    shape.style.borderRadius = el.shapeType === 'circle' ? '50%' : (el.borderRadius * s) + 'px';
     div.appendChild(shape);
+  }
+
+  // SVG avoids clip-path cutting off the stroke and lets polygon corners be rounded.
+  function _createPolygonSvg(el, s) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    const w = el.width, h = el.height, sw = Math.min(el.strokeWidth || 0, Math.min(w, h) / 2);
+    svg.classList.add('el-shape-content');
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', _roundedPolygonPath(_shapePoints(el, w, h, sw / 2), Math.max(0, el.borderRadius || 0)));
+    path.setAttribute('fill', _hexRgba(el.fillColor, el.fillOpacity));
+    if (sw) { path.setAttribute('stroke', el.strokeColor); path.setAttribute('stroke-width', sw); path.setAttribute('stroke-linejoin', 'round'); }
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function _hexRgba(hex, opacity) {
+    return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${opacity})`;
+  }
+
+  function _shapePoints(el, w, h, inset) {
+    const x = inset, y = inset, iw = Math.max(1, w - inset * 2), ih = Math.max(1, h - inset * 2);
+    if (el.shapeType === 'triangle') {
+      if (el.triangleStyle === 'right') return [[x,y], [x,y+ih], [x+iw,y+ih]];
+      if (el.triangleStyle === 'equilateral') {
+        const side = Math.min(iw, ih / (Math.sqrt(3) / 2)), th = side * Math.sqrt(3) / 2;
+        const ox = x + (iw - side) / 2, oy = y + (ih - th) / 2;
+        return [[ox + side / 2, oy], [ox, oy + th], [ox + side, oy + th]];
+      }
+      return [[x + iw / 2,y], [x,y + ih], [x + iw,y + ih]];
+    }
+    if (el.shapeType === 'diamond') return [[x+iw/2,y], [x+iw,y+ih/2], [x+iw/2,y+ih], [x,y+ih/2]];
+    if (el.shapeType === 'hexagon') return [[x+iw*.25,y], [x+iw*.75,y], [x+iw,y+ih/2], [x+iw*.75,y+ih], [x+iw*.25,y+ih], [x,y+ih/2]];
+    const count = Math.max(3, Math.min(12, Number(el.starPoints) || 5)), cx = x + iw/2, cy = y + ih/2;
+    const outerX = iw/2, outerY = ih/2, inner = .45, points = [];
+    for (let i = 0; i < count * 2; i++) {
+      const angle = -Math.PI / 2 + i * Math.PI / count, radius = i % 2 ? inner : 1;
+      points.push([cx + Math.cos(angle) * outerX * radius, cy + Math.sin(angle) * outerY * radius]);
+    }
+    return points;
+  }
+
+  function _roundedPolygonPath(points, radius) {
+    if (!radius) return `M ${points.map(p => p.join(' ')).join(' L ')} Z`;
+    const before = (a, b, d) => { const dx = b[0]-a[0], dy = b[1]-a[1], l = Math.hypot(dx,dy) || 1; return [b[0]-dx*d/l, b[1]-dy*d/l]; };
+    const after = (a, b, d) => { const dx = b[0]-a[0], dy = b[1]-a[1], l = Math.hypot(dx,dy) || 1; return [a[0]+dx*d/l, a[1]+dy*d/l]; };
+    const parts = [];
+    points.forEach((p, i) => {
+      const prev = points[(i + points.length - 1) % points.length], next = points[(i + 1) % points.length];
+      const d = Math.min(radius, Math.hypot(p[0]-prev[0], p[1]-prev[1]) / 2, Math.hypot(p[0]-next[0], p[1]-next[1]) / 2);
+      const start = before(prev, p, d), end = after(p, next, d);
+      if (i === 0) parts.push(`M ${start[0]} ${start[1]}`); else parts.push(`L ${start[0]} ${start[1]}`);
+      parts.push(`Q ${p[0]} ${p[1]} ${end[0]} ${end[1]}`);
+    });
+    return parts.join(' ') + ' Z';
   }
 
   function updateCanvasElement(id) {
     // Re-render a single element in-place
     const canvas = $('canvas');
-    const s = canvasScale();
+    const s = canvasRenderScale();
     const el = getElement(id);
     if (!el) return;
 
@@ -299,6 +351,43 @@
   let drag = { active: false, elId: null, offsetX: 0, offsetY: 0, mode: 'move', handle: '' };
   let resize = { startW: 0, startH: 0, startX: 0, startY: 0, startMouseX: 0, startMouseY: 0 };
   let rotate = { startAngle: 0, startRotation: 0, cx: 0, cy: 0 };
+  let spacePanHeld = false;
+  let pan = { active: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+      spacePanHeld = true;
+      $('canvas-area').classList.add('is-panning-ready');
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+      spacePanHeld = false;
+      $('canvas-area').classList.remove('is-panning-ready');
+    }
+  });
+
+  // Pan while zoomed: middle mouse, or hold Space and drag anywhere over the canvas.
+  $('canvas-area').addEventListener('mousedown', (e) => {
+    if (e.button !== 1 && !spacePanHeld) return;
+    pan = { active: true, startX: e.clientX, startY: e.clientY, originX: state.canvasPanX, originY: state.canvasPanY };
+    $('canvas-area').classList.add('is-panning');
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  document.addEventListener('mousemove', (e) => {
+    if (!pan.active) return;
+    state.canvasPanX = pan.originX + e.clientX - pan.startX;
+    state.canvasPanY = pan.originY + e.clientY - pan.startY;
+    _applyCanvasView();
+  });
+  document.addEventListener('mouseup', () => {
+    if (!pan.active) return;
+    pan.active = false;
+    $('canvas-area').classList.remove('is-panning');
+  });
 
   $('canvas').addEventListener('mousedown', (e) => {
     // Check rotation handle first
@@ -409,6 +498,7 @@
     const canvas = $('canvas');
     const canvasRect = canvas.getBoundingClientRect();
     const s = canvasScale();
+    const renderS = canvasRenderScale();
     const guidesContainer = document.getElementById('smart-guides');
     if (guidesContainer) guidesContainer.innerHTML = '';
 
@@ -421,8 +511,8 @@
         const dom = canvas.querySelector(`.canvas-element[data-id="${drag.elId}"]`);
         let elW = 0, elH = 0;
         if (dom) {
-          elW = dom.offsetWidth / s;
-          elH = dom.offsetHeight / s;
+          elW = dom.offsetWidth / renderS;
+          elH = dom.offsetHeight / renderS;
         }
 
         // Edges/centers of the moving element
@@ -461,7 +551,7 @@
           if (other.id === drag.elId) continue;
           const otherDom = canvas.querySelector(`.canvas-element[data-id="${other.id}"]`);
           let oW = 0, oH = 0;
-          if (otherDom) { oW = otherDom.offsetWidth / s; oH = otherDom.offsetHeight / s; }
+          if (otherDom) { oW = otherDom.offsetWidth / renderS; oH = otherDom.offsetHeight / renderS; }
           else { oW = other.width || 0; oH = other.height || 0; }
 
           const oL = other.x;
@@ -497,13 +587,13 @@
           guidesX.forEach(g => {
             const line = document.createElement('div');
             line.className = `smart-guide-v guide-${g.type}`;
-            line.style.left = (g.pos * s) + 'px';
+            line.style.left = (g.pos * renderS) + 'px';
             guidesContainer.appendChild(line);
           });
           guidesY.forEach(g => {
             const line = document.createElement('div');
             line.className = `smart-guide-h guide-${g.type}`;
-            line.style.top = (g.pos * s) + 'px';
+            line.style.top = (g.pos * renderS) + 'px';
             guidesContainer.appendChild(line);
           });
         }
@@ -519,8 +609,8 @@
       // Update DOM directly for performance
       const dom = canvas.querySelector(`.canvas-element[data-id="${drag.elId}"]`);
       if (dom) {
-        dom.style.left = (el.x * s) + 'px';
-        dom.style.top = (el.y * s) + 'px';
+        dom.style.left = (el.x * renderS) + 'px';
+        dom.style.top = (el.y * renderS) + 'px';
       }
 
       updatePositionLabel();
@@ -563,7 +653,7 @@
               if (guidesContainer) {
                 const line = document.createElement('div');
                 line.className = 'smart-guide-v guide-canvas';
-                line.style.left = (t * s) + 'px';
+                line.style.left = (t * renderS) + 'px';
                 guidesContainer.appendChild(line);
               }
               break;
@@ -578,7 +668,7 @@
               if (guidesContainer) {
                 const line = document.createElement('div');
                 line.className = 'smart-guide-v guide-canvas';
-                line.style.left = (t * s) + 'px';
+                line.style.left = (t * renderS) + 'px';
                 guidesContainer.appendChild(line);
               }
               break;
@@ -592,7 +682,7 @@
               if (guidesContainer) {
                 const line = document.createElement('div');
                 line.className = 'smart-guide-h guide-canvas';
-                line.style.top = (t * s) + 'px';
+                line.style.top = (t * renderS) + 'px';
                 guidesContainer.appendChild(line);
               }
               break;
@@ -607,7 +697,7 @@
               if (guidesContainer) {
                 const line = document.createElement('div');
                 line.className = 'smart-guide-h guide-canvas';
-                line.style.top = (t * s) + 'px';
+                line.style.top = (t * renderS) + 'px';
                 guidesContainer.appendChild(line);
               }
               break;
@@ -628,10 +718,10 @@
 
       const dom = canvas.querySelector(`.canvas-element[data-id="${drag.elId}"]`);
       if (dom) {
-        dom.style.left = (el.x * s) + 'px';
-        dom.style.top = (el.y * s) + 'px';
-        dom.style.width = (el.width * s) + 'px';
-        dom.style.height = (el.height * s) + 'px';
+        dom.style.left = (el.x * renderS) + 'px';
+        dom.style.top = (el.y * renderS) + 'px';
+        dom.style.width = (el.width * renderS) + 'px';
+        dom.style.height = (el.height * renderS) + 'px';
       }
 
       updatePositionLabel();
@@ -706,6 +796,9 @@
             <i data-lucide="${typeIcon}" class="w-3.5 h-3.5"></i>
           </div>
           <span class="layer-name">${_escapeHtml(el.name)}</span>
+          <button class="layer-rename-btn" data-action="rename" title="Renomear elemento">
+            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+          </button>
           <button class="layer-lock-btn ${el.locked ? 'on' : ''}" data-action="toggle-lock" title="Travar">
             <i data-lucide="${lockIcon}" class="w-3.5 h-3.5"></i>
           </button>
@@ -798,6 +891,13 @@
       if (act === 'toggle-vis') {
         el.visible = !el.visible;
         renderAll();
+      } else if (act === 'rename') {
+        const name = window.prompt('Novo nome do elemento:', el.name);
+        if (name !== null && name.trim()) {
+          el.name = name.trim();
+          renderLayers();
+          renderProperties();
+        }
       } else if (act === 'toggle-lock') {
         el.locked = !el.locked;
         renderAll();
@@ -1091,8 +1191,26 @@
           <option value="rect" ${el.shapeType === 'rect' ? 'selected' : ''}>Retângulo</option>
           <option value="circle" ${el.shapeType === 'circle' ? 'selected' : ''}>Círculo</option>
           <option value="triangle" ${el.shapeType === 'triangle' ? 'selected' : ''}>Triângulo</option>
+          <option value="star" ${el.shapeType === 'star' ? 'selected' : ''}>Estrela</option>
+          <option value="diamond" ${el.shapeType === 'diamond' ? 'selected' : ''}>Losango</option>
+          <option value="hexagon" ${el.shapeType === 'hexagon' ? 'selected' : ''}>Hexágono</option>
         </select>
       </div>
+      ${el.shapeType === 'triangle' ? `<div class="field-group mt-2">
+        <label class="field-label">Formato do triângulo</label>
+        <select class="field-select" data-prop="triangleStyle">
+          <option value="isosceles" ${el.triangleStyle === 'isosceles' ? 'selected' : ''}>Isósceles</option>
+          <option value="equilateral" ${el.triangleStyle === 'equilateral' ? 'selected' : ''}>Equilátero</option>
+          <option value="right" ${el.triangleStyle === 'right' ? 'selected' : ''}>Retângulo</option>
+        </select>
+      </div>` : ''}
+      ${el.shapeType === 'star' ? `<div class="field-group mt-2">
+        <label class="field-label">Número de pontas</label>
+        <div class="flex items-center gap-2">
+          <input type="range" class="field-range flex-1" data-prop="starPoints" data-type="number" min="3" max="12" value="${el.starPoints || 5}" />
+          <span class="field-value-badge" data-badge="starPoints">${el.starPoints || 5}</span>
+        </div>
+      </div>` : ''}
       <div class="grid grid-cols-2 gap-2 mt-2">
         <div class="field-group"><label class="field-label">Largura</label>
           <input type="number" class="field-input text-center" data-prop="width" data-type="number" value="${el.width}" min="10" /></div>
@@ -1132,7 +1250,7 @@
       </div>
     `);
 
-    if (el.shapeType === 'rect') {
+    if (el.shapeType !== 'circle') {
       html += _propSection('Borda', `
         <div class="field-group">
           <label class="field-label">Border Radius</label>
@@ -1186,11 +1304,18 @@
           updateElement(el.id, { [prop]: value });
           updateCanvasElement(el.id);
 
+          // Shape-specific controls depend on the selected shape.
+          if (prop === 'shapeType') {
+            renderProperties();
+            return;
+          }
+
           // Update badge if exists
           const badge = container.querySelector(`[data-badge="${prop}"]`);
           if (badge) {
             if (prop === 'rotation') badge.textContent = Math.round(value) + '°';
             else if (dtype === 'float') badge.textContent = Math.round(value * 100) + '%';
+            else if (prop === 'starPoints') badge.textContent = value;
             else badge.textContent = value + 'px';
           }
 
@@ -1266,6 +1391,42 @@
     addElement('shape');
   });
 
+  // Internal clipboard keeps all element properties, including images and shape options.
+  let copiedElement = null;
+  function copySelectedElement() {
+    const el = getSelectedElement();
+    if (!el) { showToast('Selecione um elemento para copiar.'); return; }
+    copiedElement = JSON.parse(JSON.stringify(el));
+    showToast('Elemento copiado.');
+  }
+
+  function pasteElement() {
+    if (!copiedElement) { showToast('Nenhum elemento copiado.'); return; }
+    const offset = 24;
+    const clone = { ...copiedElement, x: Math.min(REF_W - 20, copiedElement.x + offset), y: Math.min(REF_H - 20, copiedElement.y + offset) };
+    if (clone.name) clone.name = `${clone.name} (cópia)`;
+    addElement(clone.type, clone);
+    showToast('Elemento colado.');
+  }
+
+  function setCanvasZoom(zoom) {
+    state.canvasZoom = Math.max(0.25, Math.min(3, Math.round(zoom * 100) / 100));
+    _applyCanvasView();
+    $('btn-zoom-reset').textContent = `${Math.round(state.canvasZoom * 100)}%`;
+    renderCanvas();
+  }
+  function _applyCanvasView() {
+    $('canvas-wrapper').style.transform = `translate(${state.canvasPanX}px, ${state.canvasPanY}px) scale(${state.canvasZoom})`;
+  }
+  function resetCanvasView() {
+    state.canvasPanX = 0;
+    state.canvasPanY = 0;
+    setCanvasZoom(1);
+  }
+  $('btn-zoom-out').addEventListener('click', () => setCanvasZoom(state.canvasZoom - 0.25));
+  $('btn-zoom-in').addEventListener('click', () => setCanvasZoom(state.canvasZoom + 0.25));
+  $('btn-zoom-reset').addEventListener('click', resetCanvasView);
+
   // Image upload handler
   function _triggerImageUpload(targetId) {
     const fileInput = $('file-upload');
@@ -1308,7 +1469,8 @@
   $('btn-snap-bottom-left').addEventListener('click', () => {
     const el = getSelectedElement();
     if (!el) return;
-    el.x = 60; el.y = 920;
+    const { height } = _elementLogicalSize(el);
+    el.x = 60; el.y = REF_H - height - 60;
     updateCanvasElement(el.id);
     updatePositionLabel();
     renderProperties();
@@ -1317,7 +1479,8 @@
   $('btn-snap-bottom-center').addEventListener('click', () => {
     const el = getSelectedElement();
     if (!el) return;
-    el.x = 960 - 200; el.y = 920;
+    const { width, height } = _elementLogicalSize(el);
+    el.x = (REF_W - width) / 2; el.y = REF_H - height - 60;
     updateCanvasElement(el.id);
     updatePositionLabel();
     renderProperties();
@@ -1326,7 +1489,8 @@
   $('btn-snap-bottom-right').addEventListener('click', () => {
     const el = getSelectedElement();
     if (!el) return;
-    el.x = 1500; el.y = 920;
+    const { width, height } = _elementLogicalSize(el);
+    el.x = REF_W - width - 60; el.y = REF_H - height - 60;
     updateCanvasElement(el.id);
     updatePositionLabel();
     renderProperties();
@@ -1335,11 +1499,22 @@
   $('btn-snap-center').addEventListener('click', () => {
     const el = getSelectedElement();
     if (!el) return;
-    el.x = 960 - 200; el.y = 490;
+    const { width, height } = _elementLogicalSize(el);
+    el.x = (REF_W - width) / 2; el.y = (REF_H - height) / 2;
     updateCanvasElement(el.id);
     updatePositionLabel();
     renderProperties();
   });
+
+  function _elementLogicalSize(el) {
+    if (el.width && el.height) return { width: el.width, height: el.height };
+    const dom = $('canvas').querySelector(`.canvas-element[data-id="${el.id}"]`);
+    const scale = canvasRenderScale();
+    return {
+      width: dom ? dom.offsetWidth / scale : 400,
+      height: dom ? dom.offsetHeight / scale : 80,
+    };
+  }
 
   /* ─────────────────────────────────────────────────────────────
      KEYBOARD SHORTCUTS
@@ -1358,6 +1533,15 @@
 
     if (e.key === 'Escape') {
       selectElement(null);
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+      e.preventDefault();
+      copySelectedElement();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+      e.preventDefault();
+      pasteElement();
     }
   });
 
@@ -1452,6 +1636,52 @@
   $('btn-test-anim-panel').addEventListener('click', playTestAnimation);
 
   /* ─────────────────────────────────────────────────────────────
+     IMPORT / EDIT EXISTING GC
+     ───────────────────────────────────────────────────────────── */
+  $('btn-import').addEventListener('click', () => $('file-import').click());
+
+  $('file-import').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (typeof JSZip === 'undefined') {
+      showToast('Importação indisponível: JSZip não foi carregado.');
+      return;
+    }
+    if (state.elements.length && !window.confirm('Importar este GC substituirá os elementos atuais. Continuar?')) return;
+
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const editorFile = zip.file('editor-state.json');
+      if (!editorFile) {
+        throw new Error('Este pacote não possui dados de edição. Ele precisa ter sido gerado por uma versão recente do GC Creator.');
+      }
+      const imported = JSON.parse(await editorFile.async('string'));
+      if (!Array.isArray(imported.elements) || !imported.elements.every(_isValidImportedElement)) {
+        throw new Error('Os dados de edição do pacote são inválidos.');
+      }
+
+      // IDs are regenerated to keep selection/layers consistent even with older packages.
+      state.elements = imported.elements.map((element, index) => ({ ...element, id: index + 1 }));
+      state.nextId = state.elements.length + 1;
+      state.selectedId = state.elements.length ? state.elements[state.elements.length - 1].id : null;
+      state.globalDuration = Number(imported.globalDuration) || 5000;
+      $('global-duration').value = state.globalDuration;
+      renderAll();
+      showToast(`${state.elements.length} elemento(s) importado(s) para edição.`);
+    } catch (err) {
+      console.error('Erro ao importar GC:', err);
+      showToast(err.message || 'Não foi possível importar este arquivo .gc.');
+    }
+  });
+
+  function _isValidImportedElement(element) {
+    return element && typeof element === 'object' &&
+      ['text', 'image', 'shape'].includes(element.type) &&
+      typeof element.x === 'number' && typeof element.y === 'number';
+  }
+
+  /* ─────────────────────────────────────────────────────────────
      EXPORT
      ───────────────────────────────────────────────────────────── */
   $('btn-export').addEventListener('click', async () => {
@@ -1469,6 +1699,12 @@
         zip.file('index.html', result.templateHTML);
         zip.file('style.css', result.templateCSS);
         zip.file('script.js', result.templateJS);
+        // This file makes the .gc reversible: importing it restores editable layers.
+        zip.file('editor-state.json', JSON.stringify({
+          version: 2,
+          globalDuration: state.globalDuration,
+          elements: state.elements,
+        }, null, 2));
         
         if (result.assets.length > 0) {
           const assetsFolder = zip.folder('assets');
@@ -1572,6 +1808,21 @@
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => renderCanvas(), 100);
   });
+
+  // Ctrl/Cmd + mouse wheel is a quick zoom shortcut while working on details.
+  $('canvas-area').addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCanvasZoom(state.canvasZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+      return;
+    }
+    if (state.canvasZoom > 1) {
+      e.preventDefault();
+      state.canvasPanX -= e.shiftKey ? e.deltaY : e.deltaX;
+      state.canvasPanY -= e.shiftKey ? 0 : e.deltaY;
+      _applyCanvasView();
+    }
+  }, { passive: false });
 
   /* ─────────────────────────────────────────────────────────────
      INIT

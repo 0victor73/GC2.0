@@ -62,7 +62,9 @@ function _buildHTML(ctx) {
       case 'shape': {
         els += `
     <div id="${elId}" class="gc-el gc-el-shape gc-el-sized-${idx}">
-      <div class="gc-shape gc-shape-${idx}"></div>
+      ${['triangle', 'star', 'diamond', 'hexagon'].includes(el.shapeType)
+        ? _buildPolygonSvg(el, idx)
+        : `<div class="gc-shape gc-shape-${idx}"></div>`}
     </div>`;
         break;
       }
@@ -83,6 +85,42 @@ function _buildHTML(ctx) {
   <script src="script.js"><\/script>
 </body>
 </html>`;
+}
+
+function _buildPolygonSvg(el, idx) {
+  const w = el.width, h = el.height, sw = Math.min(el.strokeWidth || 0, Math.min(w, h) / 2);
+  const points = _compiledShapePoints(el, w, h, sw / 2);
+  const path = _compiledRoundedPath(points, Math.max(0, el.borderRadius || 0));
+  const fill = _compiledHexRgba(el.fillColor, el.fillOpacity);
+  const stroke = sw ? ` stroke="${_escAttr(el.strokeColor)}" stroke-width="${sw}" stroke-linejoin="round"` : '';
+  return `<svg class="gc-shape gc-shape-${idx} gc-shape-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${path}" fill="${fill}"${stroke}/></svg>`;
+}
+
+function _compiledHexRgba(hex, opacity) {
+  return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${opacity})`;
+}
+
+function _compiledShapePoints(el, w, h, inset) {
+  const x=inset, y=inset, iw=Math.max(1,w-inset*2), ih=Math.max(1,h-inset*2);
+  if (el.shapeType === 'triangle') {
+    if (el.triangleStyle === 'right') return [[x,y],[x,y+ih],[x+iw,y+ih]];
+    if (el.triangleStyle === 'equilateral') { const side=Math.min(iw,ih/(Math.sqrt(3)/2)), th=side*Math.sqrt(3)/2, ox=x+(iw-side)/2, oy=y+(ih-th)/2; return [[ox+side/2,oy],[ox,oy+th],[ox+side,oy+th]]; }
+    return [[x+iw/2,y],[x,y+ih],[x+iw,y+ih]];
+  }
+  if (el.shapeType === 'diamond') return [[x+iw/2,y],[x+iw,y+ih/2],[x+iw/2,y+ih],[x,y+ih/2]];
+  if (el.shapeType === 'hexagon') return [[x+iw*.25,y],[x+iw*.75,y],[x+iw,y+ih/2],[x+iw*.75,y+ih],[x+iw*.25,y+ih],[x,y+ih/2]];
+  const n=Math.max(3,Math.min(12,Number(el.starPoints)||5)), cx=x+iw/2, cy=y+ih/2, out=[];
+  for(let i=0;i<n*2;i++){const a=-Math.PI/2+i*Math.PI/n, r=i%2?.45:1;out.push([cx+Math.cos(a)*iw/2*r,cy+Math.sin(a)*ih/2*r]);}
+  return out;
+}
+
+function _compiledRoundedPath(points, radius) {
+  if (!radius) return `M ${points.map(p=>p.join(' ')).join(' L ')} Z`;
+  const before=(a,b,d)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;return [b[0]-dx*d/l,b[1]-dy*d/l];};
+  const after=(a,b,d)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;return [a[0]+dx*d/l,a[1]+dy*d/l];};
+  const parts=[];
+  points.forEach((p,i)=>{const prev=points[(i+points.length-1)%points.length],next=points[(i+1)%points.length];const d=Math.min(radius,Math.hypot(p[0]-prev[0],p[1]-prev[1])/2,Math.hypot(p[0]-next[0],p[1]-next[1])/2),start=before(prev,p,d),end=after(p,next,d);parts.push(i?`L ${start[0]} ${start[1]}`:`M ${start[0]} ${start[1]}`,`Q ${p[0]} ${p[1]} ${end[0]} ${end[1]}`);});
+  return parts.join(' ')+' Z';
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -171,15 +209,12 @@ body {
 
       case 'shape': {
         let shapeCSS = `  width: 100%; height: 100%;\n`;
-        shapeCSS += `  background: ${hexRgba(el.fillColor, el.fillOpacity)};\n`;
-        if (el.strokeWidth > 0) shapeCSS += `  border: ${el.strokeWidth}px solid ${el.strokeColor};\n`;
+        const isPolygon = ['triangle', 'star', 'diamond', 'hexagon'].includes(el.shapeType);
+        if (!isPolygon) shapeCSS += `  background: ${hexRgba(el.fillColor, el.fillOpacity)};\n`;
+        if (!isPolygon && el.strokeWidth > 0) shapeCSS += `  border: ${el.strokeWidth}px solid ${el.strokeColor};\n`;
         if (el.shapeType === 'rect') shapeCSS += `  border-radius: ${el.borderRadius}px;\n`;
         else if (el.shapeType === 'circle') shapeCSS += `  border-radius: 50%;\n`;
-        else if (el.shapeType === 'triangle') {
-          shapeCSS = `  width: 100%; height: 100%;\n`;
-          shapeCSS += `  background: ${hexRgba(el.fillColor, el.fillOpacity)};\n`;
-          shapeCSS += `  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);\n`;
-        }
+        else if (isPolygon) shapeCSS += `  display: block;\n`;
 
         css += `.gc-el-sized-${idx} { width: ${el.width}px; height: ${el.height}px; }
 .gc-shape-${idx} {\n${shapeCSS}}\n`;
