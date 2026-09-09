@@ -74,7 +74,8 @@
   function _elementDefaults(type, id) {
     const base = { 
       visible: true, locked: false, x: 200, y: 500,
-      animIn: 'fadeIn', animOut: 'fadeOut', animDuration: 500, animDelay: 0
+      rotation: 0,
+      animIn: 'fadeIn', animOut: 'fadeOut', animDuration: 500, animDelay: 0, animOutDelay: 0
     };
 
     switch (type) {
@@ -148,6 +149,7 @@
     div.style.zIndex = zIdx + 1;
     div.style.left = (el.x * s) + 'px';
     div.style.top = (el.y * s) + 'px';
+    if (el.rotation) div.style.transform = `rotate(${el.rotation}deg)`;
 
     if (!el.visible) div.classList.add('hidden-layer');
     if (el.locked) div.classList.add('locked');
@@ -169,6 +171,12 @@
         div.appendChild(h);
       });
     }
+
+    // Rotation handle (always, for all types)
+    const rotHandle = document.createElement('div');
+    rotHandle.className = 'rotate-handle';
+    rotHandle.dataset.handle = 'rotate';
+    div.appendChild(rotHandle);
 
     return div;
   }
@@ -290,9 +298,36 @@
      ───────────────────────────────────────────────────────────── */
   let drag = { active: false, elId: null, offsetX: 0, offsetY: 0, mode: 'move', handle: '' };
   let resize = { startW: 0, startH: 0, startX: 0, startY: 0, startMouseX: 0, startMouseY: 0 };
+  let rotate = { startAngle: 0, startRotation: 0, cx: 0, cy: 0 };
 
   $('canvas').addEventListener('mousedown', (e) => {
-    // Check resize handles first
+    // Check rotation handle first
+    const rotHandleEl = e.target.closest('.rotate-handle');
+    if (rotHandleEl) {
+      const elDom = rotHandleEl.closest('.canvas-element');
+      const id = parseInt(elDom.dataset.id);
+      const el = getElement(id);
+      if (!el || el.locked) return;
+      selectElement(id);
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = elDom.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+
+      drag.active = true;
+      drag.elId = id;
+      drag.mode = 'rotate';
+      rotate.startAngle = startAngle;
+      rotate.startRotation = el.rotation || 0;
+      rotate.cx = cx;
+      rotate.cy = cy;
+      return;
+    }
+
+    // Check resize handles
     const handleEl = e.target.closest('.resize-handle');
     if (handleEl) {
       const elDom = handleEl.closest('.canvas-element');
@@ -345,13 +380,134 @@
     const el = getElement(drag.elId);
     if (!el) return;
 
+    // ── ROTATE MODE ──
+    if (drag.mode === 'rotate') {
+      const currentAngle = Math.atan2(e.clientY - rotate.cy, e.clientX - rotate.cx) * 180 / Math.PI;
+      let delta = currentAngle - rotate.startAngle;
+      let newRotation = rotate.startRotation + delta;
+
+      // Shift = snap to 15° increments
+      if (e.shiftKey) newRotation = Math.round(newRotation / 15) * 15;
+
+      // Normalize to [0, 360)
+      newRotation = ((newRotation % 360) + 360) % 360;
+
+      el.rotation = Math.round(newRotation * 10) / 10;
+
+      const canvas = $('canvas');
+      const dom = canvas.querySelector(`.canvas-element[data-id="${drag.elId}"]`);
+      if (dom) dom.style.transform = `rotate(${el.rotation}deg)`;
+
+      // Sync rotation input in properties panel
+      const rotInput = document.querySelector('#properties-content [data-prop="rotation"]');
+      if (rotInput) rotInput.value = Math.round(el.rotation);
+      const rotBadge = document.querySelector('#properties-content [data-badge="rotation"]');
+      if (rotBadge) rotBadge.textContent = Math.round(el.rotation) + '°';
+      return;
+    }
+
     const canvas = $('canvas');
     const canvasRect = canvas.getBoundingClientRect();
     const s = canvasScale();
+    const guidesContainer = document.getElementById('smart-guides');
+    if (guidesContainer) guidesContainer.innerHTML = '';
 
     if (drag.mode === 'move') {
       let newX = (e.clientX - canvasRect.left - drag.offsetX) / s;
       let newY = (e.clientY - canvasRect.top - drag.offsetY) / s;
+
+      if (!e.ctrlKey) {
+        const snapThreshold = 8;
+        const dom = canvas.querySelector(`.canvas-element[data-id="${drag.elId}"]`);
+        let elW = 0, elH = 0;
+        if (dom) {
+          elW = dom.offsetWidth / s;
+          elH = dom.offsetHeight / s;
+        }
+
+        // Edges/centers of the moving element
+        const elLeft   = () => newX;
+        const elCenterX= () => newX + elW / 2;
+        const elRight  = () => newX + elW;
+        const elTop    = () => newY;
+        const elCenterY= () => newY + elH / 2;
+        const elBottom = () => newY + elH;
+
+        let snappedX = false, snappedY = false;
+        const guidesX = []; // { pos (canvas coords), type: 'canvas'|'element' }
+        const guidesY = [];
+
+        // ── 1. Snap to canvas edges/center ──
+        const canvasTargetsX = [0, REF_W / 2, REF_W];
+        const canvasTargetsY = [0, REF_H / 2, REF_H];
+
+        if (!snappedX) {
+          for (const t of canvasTargetsX) {
+            if (Math.abs(elLeft() - t) < snapThreshold)   { newX = t;           guidesX.push({ pos: t, type: 'canvas' }); snappedX = true; break; }
+            if (Math.abs(elCenterX() - t) < snapThreshold){ newX = t - elW / 2; guidesX.push({ pos: t, type: 'canvas' }); snappedX = true; break; }
+            if (Math.abs(elRight() - t) < snapThreshold)  { newX = t - elW;     guidesX.push({ pos: t, type: 'canvas' }); snappedX = true; break; }
+          }
+        }
+        if (!snappedY) {
+          for (const t of canvasTargetsY) {
+            if (Math.abs(elTop() - t) < snapThreshold)    { newY = t;           guidesY.push({ pos: t, type: 'canvas' }); snappedY = true; break; }
+            if (Math.abs(elCenterY() - t) < snapThreshold){ newY = t - elH / 2; guidesY.push({ pos: t, type: 'canvas' }); snappedY = true; break; }
+            if (Math.abs(elBottom() - t) < snapThreshold) { newY = t - elH;     guidesY.push({ pos: t, type: 'canvas' }); snappedY = true; break; }
+          }
+        }
+
+        // ── 2. Snap to other elements' edges/centers ──
+        for (const other of state.elements) {
+          if (other.id === drag.elId) continue;
+          const otherDom = canvas.querySelector(`.canvas-element[data-id="${other.id}"]`);
+          let oW = 0, oH = 0;
+          if (otherDom) { oW = otherDom.offsetWidth / s; oH = otherDom.offsetHeight / s; }
+          else { oW = other.width || 0; oH = other.height || 0; }
+
+          const oL = other.x;
+          const oCX = other.x + oW / 2;
+          const oR = other.x + oW;
+          const oT = other.y;
+          const oCY = other.y + oH / 2;
+          const oB = other.y + oH;
+
+          const xTargets = [oL, oCX, oR];
+          const yTargets = [oT, oCY, oB];
+
+          if (!snappedX) {
+            for (const t of xTargets) {
+              if (Math.abs(elLeft() - t) < snapThreshold)   { newX = t;           guidesX.push({ pos: t, type: 'element' }); snappedX = true; break; }
+              if (Math.abs(elCenterX() - t) < snapThreshold){ newX = t - elW / 2; guidesX.push({ pos: t, type: 'element' }); snappedX = true; break; }
+              if (Math.abs(elRight() - t) < snapThreshold)  { newX = t - elW;     guidesX.push({ pos: t, type: 'element' }); snappedX = true; break; }
+            }
+          }
+          if (!snappedY) {
+            for (const t of yTargets) {
+              if (Math.abs(elTop() - t) < snapThreshold)    { newY = t;           guidesY.push({ pos: t, type: 'element' }); snappedY = true; break; }
+              if (Math.abs(elCenterY() - t) < snapThreshold){ newY = t - elH / 2; guidesY.push({ pos: t, type: 'element' }); snappedY = true; break; }
+              if (Math.abs(elBottom() - t) < snapThreshold) { newY = t - elH;     guidesY.push({ pos: t, type: 'element' }); snappedY = true; break; }
+            }
+          }
+
+          if (snappedX && snappedY) break;
+        }
+
+        // ── 3. Draw guides ──
+        if (guidesContainer) {
+          guidesX.forEach(g => {
+            const line = document.createElement('div');
+            line.className = `smart-guide-v guide-${g.type}`;
+            line.style.left = (g.pos * s) + 'px';
+            guidesContainer.appendChild(line);
+          });
+          guidesY.forEach(g => {
+            const line = document.createElement('div');
+            line.className = `smart-guide-h guide-${g.type}`;
+            line.style.top = (g.pos * s) + 'px';
+            guidesContainer.appendChild(line);
+          });
+        }
+      }
 
       // Constrain
       newX = Math.max(0, Math.min(newX, REF_W - 20));
@@ -385,6 +541,81 @@
       if (handle.includes('s')) { newH = resize.startH + dy; }
       if (handle.includes('n')) { newH = resize.startH - dy; newY = resize.startY + dy; }
 
+      // ── Snap resize edges to canvas/elements ──
+      if (!e.ctrlKey) {
+        const snapThreshold = 8;
+        const edgeR = newX + newW;
+        const edgeB = newY + newH;
+
+        const snapTargetsX = [0, REF_W / 2, REF_W, ...state.elements
+          .filter(o => o.id !== drag.elId)
+          .flatMap(o => { const oW = o.width || 0; return [o.x, o.x + oW / 2, o.x + oW]; })
+        ];
+        const snapTargetsY = [0, REF_H / 2, REF_H, ...state.elements
+          .filter(o => o.id !== drag.elId)
+          .flatMap(o => { const oH = o.height || 0; return [o.y, o.y + oH / 2, o.y + oH]; })
+        ];
+
+        if (handle.includes('e')) {
+          for (const t of snapTargetsX) {
+            if (Math.abs(edgeR - t) < snapThreshold) {
+              newW = t - newX;
+              if (guidesContainer) {
+                const line = document.createElement('div');
+                line.className = 'smart-guide-v guide-canvas';
+                line.style.left = (t * s) + 'px';
+                guidesContainer.appendChild(line);
+              }
+              break;
+            }
+          }
+        }
+        if (handle.includes('w')) {
+          for (const t of snapTargetsX) {
+            if (Math.abs(newX - t) < snapThreshold) {
+              const oldR = resize.startX + resize.startW;
+              newX = t; newW = oldR - t;
+              if (guidesContainer) {
+                const line = document.createElement('div');
+                line.className = 'smart-guide-v guide-canvas';
+                line.style.left = (t * s) + 'px';
+                guidesContainer.appendChild(line);
+              }
+              break;
+            }
+          }
+        }
+        if (handle.includes('s')) {
+          for (const t of snapTargetsY) {
+            if (Math.abs(edgeB - t) < snapThreshold) {
+              newH = t - newY;
+              if (guidesContainer) {
+                const line = document.createElement('div');
+                line.className = 'smart-guide-h guide-canvas';
+                line.style.top = (t * s) + 'px';
+                guidesContainer.appendChild(line);
+              }
+              break;
+            }
+          }
+        }
+        if (handle.includes('n')) {
+          for (const t of snapTargetsY) {
+            if (Math.abs(newY - t) < snapThreshold) {
+              const oldB = resize.startY + resize.startH;
+              newY = t; newH = oldB - t;
+              if (guidesContainer) {
+                const line = document.createElement('div');
+                line.className = 'smart-guide-h guide-canvas';
+                line.style.top = (t * s) + 'px';
+                guidesContainer.appendChild(line);
+              }
+              break;
+            }
+          }
+        }
+      }
+
       newW = Math.max(20, Math.round(newW));
       newH = Math.max(20, Math.round(newH));
       newX = Math.round(newX);
@@ -413,6 +644,8 @@
     if (drag.active) {
       drag.active = false;
       drag.elId = null;
+      const guidesContainer = document.getElementById('smart-guides');
+      if (guidesContainer) guidesContainer.innerHTML = '';
     }
   });
 
@@ -465,7 +698,7 @@
       const lockIcon = el.locked ? 'lock' : 'unlock';
 
       html += `
-        <div class="layer-item ${selected ? 'selected' : ''}" data-id="${el.id}">
+        <div class="layer-item ${selected ? 'selected' : ''}" data-id="${el.id}" draggable="true">
           <button class="layer-vis-btn ${el.visible ? '' : 'off'}" data-action="toggle-vis" title="Visibilidade">
             <i data-lucide="${visIcon}" class="w-3.5 h-3.5"></i>
           </button>
@@ -488,6 +721,69 @@
   }
 
   // Layer events (event delegation)
+  let draggedLayerId = null;
+
+  $('layers-list').addEventListener('dragstart', (e) => {
+    const item = e.target.closest('.layer-item');
+    if (!item) return;
+    draggedLayerId = parseInt(item.dataset.id);
+    e.dataTransfer.effectAllowed = 'move';
+    item.classList.add('dragging');
+  });
+
+  $('layers-list').addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.layer-item');
+    if (item && parseInt(item.dataset.id) !== draggedLayerId) {
+      const rect = item.getBoundingClientRect();
+      const offset = e.clientY - rect.top;
+      if (offset < rect.height / 2) {
+        item.classList.add('drop-target-top');
+        item.classList.remove('drop-target-bottom');
+      } else {
+        item.classList.add('drop-target-bottom');
+        item.classList.remove('drop-target-top');
+      }
+    }
+  });
+
+  $('layers-list').addEventListener('dragleave', (e) => {
+    const item = e.target.closest('.layer-item');
+    if (item) item.classList.remove('drop-target-top', 'drop-target-bottom');
+  });
+
+  $('layers-list').addEventListener('drop', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.layer-item');
+    if (item) {
+      item.classList.remove('drop-target-top', 'drop-target-bottom');
+      const targetId = parseInt(item.dataset.id);
+      if (draggedLayerId !== null && targetId !== draggedLayerId) {
+        const draggedIdx = state.elements.findIndex(el => el.id === draggedLayerId);
+        const targetIdx = state.elements.findIndex(el => el.id === targetId);
+        if (draggedIdx > -1 && targetIdx > -1) {
+          const rect = item.getBoundingClientRect();
+          const offset = e.clientY - rect.top;
+          const draggedEl = state.elements.splice(draggedIdx, 1)[0];
+          
+          const newTargetIdx = state.elements.findIndex(el => el.id === targetId);
+          if (offset < rect.height / 2) {
+            state.elements.splice(newTargetIdx + 1, 0, draggedEl);
+          } else {
+            state.elements.splice(newTargetIdx, 0, draggedEl);
+          }
+          renderAll();
+        }
+      }
+    }
+    draggedLayerId = null;
+  });
+
+  $('layers-list').addEventListener('dragend', (e) => {
+    const item = e.target.closest('.layer-item');
+    if (item) item.classList.remove('dragging');
+    document.querySelectorAll('.layer-item').forEach(el => el.classList.remove('drop-target-top', 'drop-target-bottom'));
+  });
   $('layers-list').addEventListener('click', (e) => {
     const item = e.target.closest('.layer-item');
     if (!item) return;
@@ -564,7 +860,7 @@
 
     let html = '';
 
-    // ── Common: Name + Position ──
+    // ── Common: Name + Position + Rotation ──
     html += _propSection('Geral', `
       <div class="field-group">
         <label class="field-label">Nome</label>
@@ -578,6 +874,18 @@
         <div class="field-group">
           <label class="field-label">Y</label>
           <input type="number" class="field-input text-center" data-prop="y" data-type="number" value="${el.y}" />
+        </div>
+      </div>
+      <div class="field-group mt-2">
+        <label class="field-label" style="justify-content:space-between">
+          <span>Rotação</span>
+          <button class="btn-reset-rotation" data-prop-reset="rotation" title="Resetar para 0°" style="font-size:10px;background:none;border:none;color:#565e82;cursor:pointer;padding:2px 4px;border-radius:4px;transition:color 0.2s">
+            <span>↺ 0°</span>
+          </button>
+        </label>
+        <div class="flex items-center gap-2">
+          <input type="range" class="field-range flex-1" data-prop="rotation" data-type="float" min="0" max="360" step="0.5" value="${el.rotation || 0}" />
+          <span class="field-value-badge" data-badge="rotation">${Math.round(el.rotation || 0)}°</span>
         </div>
       </div>
     `);
@@ -612,14 +920,18 @@
           </select>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-2 mt-2">
+      <div class="grid grid-cols-3 gap-2 mt-2">
         <div class="field-group">
-          <label class="field-label">Duração (ms)</label>
+          <label class="field-label" title="Duração da animação">Dur. (ms)</label>
           <input type="number" class="field-input text-center" data-prop="animDuration" data-type="number" value="${el.animDuration}" min="100" step="50" />
         </div>
         <div class="field-group">
-          <label class="field-label">Atraso (ms)</label>
+          <label class="field-label" title="Atraso na entrada">In (ms)</label>
           <input type="number" class="field-input text-center" data-prop="animDelay" data-type="number" value="${el.animDelay}" min="0" step="50" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" title="Atraso na saída">Out (ms)</label>
+          <input type="number" class="field-input text-center" data-prop="animOutDelay" data-type="number" value="${el.animOutDelay}" min="0" step="50" />
         </div>
       </div>
     `);
@@ -647,12 +959,8 @@
     // Typography
     html += _propSection('Tipografia', `
       <div class="field-group">
-        <label class="field-label">Fonte</label>
-        <select class="field-select" data-prop="fontFamily">
-          ${['Inter','Roboto','Outfit','Montserrat','Open Sans'].map(f =>
-            `<option value="${f}" ${el.fontFamily === f ? 'selected' : ''}>${f}</option>`
-          ).join('')}
-        </select>
+        <label class="field-label">Fonte (Google Fonts)</label>
+        <input type="text" class="field-input" data-prop="fontFamily" value="${_escAttr(el.fontFamily)}" placeholder="ex: Roboto" />
       </div>
       <div class="field-group mt-2">
         <label class="field-label">Tamanho</label>
@@ -860,13 +1168,29 @@
           if (dtype === 'number') value = parseInt(value) || 0;
           else if (dtype === 'float') value = parseFloat(value) || 0;
 
+          if (prop === 'fontFamily') {
+            const fontName = value.trim();
+            if (fontName) {
+              const fontUrl = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@300;400;500;600;700;800&display=swap`;
+              const linkId = 'font-' + fontName.replace(/ /g, '-').toLowerCase();
+              if (!document.getElementById(linkId)) {
+                const link = document.createElement('link');
+                link.id = linkId;
+                link.rel = 'stylesheet';
+                link.href = fontUrl;
+                document.head.appendChild(link);
+              }
+            }
+          }
+
           updateElement(el.id, { [prop]: value });
           updateCanvasElement(el.id);
 
           // Update badge if exists
           const badge = container.querySelector(`[data-badge="${prop}"]`);
           if (badge) {
-            if (dtype === 'float') badge.textContent = Math.round(value * 100) + '%';
+            if (prop === 'rotation') badge.textContent = Math.round(value) + '°';
+            else if (dtype === 'float') badge.textContent = Math.round(value * 100) + '%';
             else badge.textContent = value + 'px';
           }
 
@@ -910,6 +1234,20 @@
         _triggerImageUpload(el.id);
       });
     }
+
+    // Reset rotation button
+    container.querySelectorAll('[data-prop-reset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const prop = btn.dataset.propReset;
+        updateElement(el.id, { [prop]: 0 });
+        updateCanvasElement(el.id);
+        // Sync range input and badge
+        const rangeInput = container.querySelector(`[data-prop="${prop}"]`);
+        if (rangeInput) rangeInput.value = 0;
+        const badge = container.querySelector(`[data-badge="${prop}"]`);
+        if (badge) badge.textContent = prop === 'rotation' ? '0°' : '0px';
+      });
+    });
   }
 
   /* ─────────────────────────────────────────────────────────────
@@ -1089,13 +1427,13 @@
         if (dom) {
           dom.style.animation = 'none';
           void dom.offsetHeight;
-          dom.style.animation = `${animNameMap[el.animOut]} ${el.animDuration}ms ease ${el.animDelay}ms both`;
+          dom.style.animation = `${animNameMap[el.animOut]} ${el.animDuration}ms ease ${el.animOutDelay}ms both`;
         }
       });
 
       let maxExitTime = 0;
       state.elements.forEach(el => {
-        const t = el.animDelay + el.animDuration;
+        const t = el.animOutDelay + el.animDuration;
         if (t > maxExitTime) maxExitTime = t;
       });
 

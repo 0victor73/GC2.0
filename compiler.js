@@ -137,7 +137,7 @@ body {
   // Per-element styles
   ctx.elements.forEach((el, idx) => {
     css += `\n/* ── ${el.name} ── */\n`;
-    css += `#el-${idx} { left: ${el.x}px; top: ${el.y}px; }\n`;
+    css += `#el-${idx} { left: ${el.x}px; top: ${el.y}px;${el.rotation ? ` transform: rotate(${el.rotation}deg);` : ''} }\n`;
 
     switch (el.type) {
       case 'text':
@@ -193,7 +193,7 @@ body {
   
   ctx.elements.forEach((el, idx) => {
     css += `.gc-enter #el-${idx} { animation: ${el.animIn} ${el.animDuration}ms ease ${el.animDelay}ms both; }\n`;
-    css += `.gc-exit  #el-${idx} { animation: ${el.animOut} ${el.animDuration}ms ease ${el.animDelay}ms both; }\n`;
+    css += `.gc-exit  #el-${idx} { animation: ${el.animOut} ${el.animDuration}ms ease ${el.animOutDelay || 0}ms both; }\n`;
   });
   css += '\n';
 
@@ -248,7 +248,7 @@ function _buildJS(ctx) {
   let hideTimeout = null;
   const defaultDuration = ${ctx.globalDuration};
   const maxEnterTime = ${ctx.elements.length > 0 ? Math.max(...ctx.elements.map(el => el.animDelay + el.animDuration)) : 0};
-  const maxExitTime = ${ctx.elements.length > 0 ? Math.max(...ctx.elements.map(el => el.animDelay + el.animDuration)) : 0};
+  const maxExitTime = ${ctx.elements.length > 0 ? Math.max(...ctx.elements.map(el => (el.animOutDelay || 0) + el.animDuration)) : 0};
 
   /* Map variable names to DOM elements */
   const varElements = {

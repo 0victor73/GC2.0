@@ -20,7 +20,7 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
   max-width: 960px;
   aspect-ratio: 16 / 9;
   border-radius: 12px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.06),
     0 25px 60px -12px rgba(0,0,0,0.5),
@@ -40,6 +40,9 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
   background-size: 20px 20px;
   background-position: 0 0, 0 10px, 10px -10px, -10px 0;
   cursor: default;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
 }
 
 /* Canvas empty state */
@@ -105,6 +108,59 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
 .resize-handle.rh-sw { bottom: -5px; left: -5px; cursor: sw-resize; }
 .resize-handle.rh-se { bottom: -5px; right: -5px; cursor: se-resize; }
 
+/* Rotation handle */
+.rotate-handle {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #6366f1;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.5);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  z-index: 60;
+  pointer-events: auto;
+  /* Icon-like dot */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rotate-handle::before {
+  content: '↻';
+  font-size: 11px;
+  color: #fff;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Connector line from handle to element top */
+.rotate-handle::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: 12px;
+  background: rgba(99,102,241,0.5);
+  pointer-events: none;
+}
+
+.canvas-element.selected .rotate-handle { opacity: 1; }
+.rotate-handle:hover {
+  background: #818cf8;
+  transform: translateX(-50%) scale(1.15);
+  cursor: grab;
+}
+.rotate-handle:active { cursor: grabbing; }
+
+
 /* Element type-specific */
 .el-text-inner {
   display: flex;
@@ -127,6 +183,53 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/* Smart Guides */
+.smart-guides-container {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* Base guide styles */
+.smart-guide-h,
+.smart-guide-v {
+  position: absolute;
+}
+
+/* Horizontal guide */
+.smart-guide-h {
+  left: 0; right: 0;
+  height: 1px;
+}
+
+/* Vertical guide */
+.smart-guide-v {
+  top: 0; bottom: 0;
+  width: 1px;
+}
+
+/* Canvas snap: magenta */
+.smart-guide-h.guide-canvas,
+.smart-guide-v.guide-canvas {
+  background: rgba(255, 0, 220, 0.9);
+  box-shadow: 0 0 4px rgba(255, 0, 220, 0.6), 0 0 8px rgba(255, 0, 220, 0.2);
+}
+
+/* Element-to-element snap: cyan */
+.smart-guide-h.guide-element,
+.smart-guide-v.guide-element {
+  background: rgba(0, 220, 255, 0.9);
+  box-shadow: 0 0 4px rgba(0, 220, 255, 0.6), 0 0 8px rgba(0, 220, 255, 0.2);
+}
+
+/* Fallback (sem classe específica) */
+.smart-guide-h:not([class*="guide-"]),
+.smart-guide-v:not([class*="guide-"]) {
+  background: #f0f;
+  box-shadow: 0 0 2px rgba(255, 0, 255, 0.5);
 }
 
 /* ── Snap Buttons ─────────────────────────────────────────────── */
@@ -211,6 +314,16 @@ body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: 
   background: rgba(99,102,241,0.1);
   border-color: rgba(99,102,241,0.25);
   color: #d8dce8;
+}
+.layer-item.dragging {
+  opacity: 0.5;
+  border: 1px dashed rgba(99,102,241,0.5);
+}
+.layer-item.drop-target-top {
+  border-top: 2px solid #34d399;
+}
+.layer-item.drop-target-bottom {
+  border-bottom: 2px solid #34d399;
 }
 .layer-item.selected .layer-type-icon { color: #818cf8; }
 
